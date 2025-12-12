@@ -87,7 +87,11 @@ def get_face_encoding(image_bytes: bytes) -> Optional[np.ndarray]:
 
 
 # --- 4. FastAPI Application and Endpoints ---
-app = FastAPI()
+app = FastAPI(title="Cogni Anchor API", description="Backend API for cognitive health companion app")
+
+# Import and include chatbot router
+from app.chatbot import router as chatbot_router
+app.include_router(chatbot_router)
 
 @app.on_event("startup")
 def startup_event():

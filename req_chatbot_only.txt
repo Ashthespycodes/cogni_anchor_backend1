@@ -1,0 +1,5 @@
+fastapi[all]
+uvicorn
+# AI/Chatbot
+openai # For Grok API (uses OpenAI SDK format)
+python-dotenv # For environment variables

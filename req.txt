@@ -7,3 +7,6 @@ psycopg2-binary # PostgreSQL driver
 face-recognition # Simple API wrapper for dlib, good accuracy
 numpy
 opencv-python-headless # For image processing (required by face-recognition/dlib)
+# AI/Chatbot
+openai # For Grok API (uses OpenAI SDK format)
+python-dotenv # For environment variables
