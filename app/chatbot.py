@@ -5,10 +5,13 @@ Handles conversational AI using Grok API
 
 import logging
 from typing import Optional, List, Dict
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from pydantic import BaseModel
 from openai import OpenAI
 import os
+import tempfile
+from app.services.stt_service import transcribe_audio_bytes
+from app.services.tts_service import generate_speech_file
 
 # --- Logging Setup ---
 logger = logging.getLogger("ChatbotAPI")
@@ -227,6 +230,84 @@ async def delete_history(patient_id: str):
         "patient_id": patient_id
     }
 
+@router.post("/voice")
+async def voice_chat(
+    patient_id: str,
+    audio: UploadFile = File(...)
+):
+    """
+    Handle voice input - transcribe audio, get AI response, return text + audio
+
+    Request:
+    - patient_id: Patient identifier (form data)
+    - audio: Audio file (WAV, MP3, etc.)
+
+    Response:
+    {
+        "patient_id": "123",
+        "transcription": "Hello, how are you?",
+        "response": "I'm doing well! How can I help you?",
+        "audio_url": "/static/response_123.mp3"
+    }
+    """
+    try:
+        logger.info(f"Received voice message from patient {patient_id}")
+
+        # Read audio file
+        audio_bytes = await audio.read()
+
+        # Step 1: Transcribe audio to text (STT)
+        logger.info("Transcribing audio...")
+        transcription = await transcribe_audio_bytes(audio_bytes)
+
+        if not transcription:
+            raise HTTPException(
+                status_code=400,
+                detail="Failed to transcribe audio. Please try again."
+            )
+
+        logger.info(f"Transcribed: {transcription}")
+
+        # Step 2: Generate AI response using Grok
+        logger.info("Generating AI response...")
+        response_text = generate_response(patient_id, transcription)
+
+        # Step 3: Convert response to speech (TTS)
+        logger.info("Generating speech audio...")
+
+        # Create unique filename for audio response
+        import uuid
+        audio_filename = f"response_{uuid.uuid4().hex[:8]}.mp3"
+        audio_path = f"temp/{audio_filename}"
+
+        # Ensure temp directory exists
+        os.makedirs("temp", exist_ok=True)
+
+        # Generate audio file
+        generated_audio = generate_speech_file(
+            text=response_text,
+            output_path=audio_path,
+            voice="nova"  # Warm, friendly voice
+        )
+
+        # Return both text and audio
+        return {
+            "patient_id": patient_id,
+            "transcription": transcription,
+            "response": response_text,
+            "audio_url": f"/temp/{audio_filename}" if generated_audio else None,
+            "mode": "audio"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing voice message: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process voice message: {str(e)}"
+        )
+
 @router.get("/health")
 async def health_check():
     """
@@ -241,5 +322,6 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "chatbot",
-        "api": "grok"
+        "api": "grok",
+        "features": ["text_chat", "voice_chat", "stt", "tts"]
     }
