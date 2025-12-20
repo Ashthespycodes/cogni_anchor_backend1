@@ -1,6 +1,7 @@
 """
-Speech-to-Text Service using OpenAI Whisper API
-Converts audio files to text
+Speech-to-Text Service
+Supports both OpenAI Whisper API (online) and Local Whisper (offline)
+Automatically falls back to local Whisper if OpenAI key is not available
 """
 
 import os
@@ -14,10 +15,14 @@ load_dotenv()
 logger = logging.getLogger("STT_Service")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    logger.warning("OPENAI_API_KEY not found in environment. STT service will not work.")
+USE_LOCAL_WHISPER = not OPENAI_API_KEY  # Auto-switch to local if no API key
 
-client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+if OPENAI_API_KEY:
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    logger.info("Using OpenAI Whisper API for STT")
+else:
+    client = None
+    logger.info("OpenAI API key not found. Using LOCAL Whisper for STT (offline)")
 
 
 def transcribe_audio(
@@ -26,23 +31,31 @@ def transcribe_audio(
     response_format: str = "text"
 ) -> Optional[str]:
     """
-    Transcribe audio file to text using OpenAI Whisper API
+    Transcribe audio file to text
+    Uses OpenAI Whisper API if available, otherwise uses local Whisper
 
     Args:
         audio_file_path: Path to the audio file
-        model: Whisper model to use (default: whisper-1)
+        model: Whisper model to use (default: whisper-1 for OpenAI, base for local)
         response_format: Response format (text, json, verbose_json)
 
     Returns:
         Transcribed text or None if error
     """
-    if not client:
-        logger.error("OpenAI client not initialized. Check OPENAI_API_KEY.")
-        return None
+    # Use local Whisper if OpenAI client not available
+    if USE_LOCAL_WHISPER:
+        try:
+            from app.services.local_whisper_service import transcribe_audio_local
+            logger.info(f"Using LOCAL Whisper to transcribe: {audio_file_path}")
+            return transcribe_audio_local(audio_file_path, model_name="base")
+        except Exception as e:
+            logger.error(f"Error with local Whisper: {e}")
+            return None
 
+    # Use OpenAI Whisper API
     try:
         with open(audio_file_path, "rb") as audio_file:
-            logger.info(f"Transcribing audio file: {audio_file_path}")
+            logger.info(f"Transcribing audio file with OpenAI: {audio_file_path}")
 
             transcription = client.audio.transcriptions.create(
                 model=model,
@@ -74,11 +87,12 @@ async def transcribe_audio_bytes(
 ) -> Optional[str]:
     """
     Transcribe audio from bytes (useful for uploaded files)
+    Automatically uses local Whisper if OpenAI API key not available
 
     Args:
         audio_bytes: Audio file bytes
         filename: Temporary filename to use
-        model: Whisper model to use
+        model: Whisper model to use (whisper-1 for OpenAI, base for local)
 
     Returns:
         Transcribed text or None if error
@@ -92,7 +106,7 @@ async def transcribe_audio_bytes(
             temp_file.write(audio_bytes)
             temp_path = temp_file.name
 
-        # Transcribe
+        # Transcribe (will auto-use local Whisper if no OpenAI key)
         text = transcribe_audio(temp_path, model=model)
 
         # Clean up

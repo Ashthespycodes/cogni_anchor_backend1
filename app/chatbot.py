@@ -1,13 +1,13 @@
 """
 Chatbot module for Cogni Anchor
-Handles conversational AI using Grok API
+Handles conversational AI using Gemini API
 """
 
 import logging
 from typing import Optional, List, Dict
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from pydantic import BaseModel
-from openai import OpenAI
+import google.generativeai as genai
 import os
 import tempfile
 from app.services.stt_service import transcribe_audio_bytes
@@ -34,15 +34,17 @@ class Message(BaseModel):
     role: str  # "user" or "assistant"
     content: str
 
-# --- Grok API Configuration ---
-GROK_API_KEY = os.getenv("GROK_API_KEY", "your-grok-api-key-here")
-GROK_API_BASE = "https://api.x.ai/v1"
+# --- AI API Configuration ---
+# Use Gemini API
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Initialize Grok client (using OpenAI SDK format)
-grok_client = OpenAI(
-    api_key=GROK_API_KEY,
-    base_url=GROK_API_BASE
-)
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    AI_MODEL = "gemini-2.5-flash"
+    logger.info("Using Gemini API for chatbot")
+else:
+    AI_MODEL = None
+    logger.warning("No Gemini API key found. Chatbot will not work.")
 
 # --- In-Memory Conversation Storage (temporary) ---
 # In production, you'd use a database
@@ -106,30 +108,35 @@ def generate_response(patient_id: str, user_message: str) -> str:
         # Add user message to history
         add_to_history(patient_id, "user", user_message)
 
-        # Build messages for API call
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT}
-        ]
+        logger.info(f"Sending request to Gemini API for patient {patient_id}")
 
-        # Add conversation history
-        for msg in history:
-            messages.append({
-                "role": msg["role"],
-                "content": msg["content"]
-            })
-
-        logger.info(f"Sending request to Grok API for patient {patient_id}")
-
-        # Call Grok API
-        completion = grok_client.chat.completions.create(
-            model="grok-beta",
-            messages=messages,
-            temperature=0.7,  # Warm and friendly responses
-            max_tokens=150,   # Keep responses short
+        # Initialize Gemini model
+        model = genai.GenerativeModel(
+            model_name=AI_MODEL,
+            system_instruction=SYSTEM_PROMPT
         )
 
-        # Extract response
-        assistant_response = completion.choices[0].message.content
+        # Build conversation history for Gemini
+        chat_history = []
+        for msg in history:
+            if msg["role"] == "user":
+                chat_history.append({"role": "user", "parts": [msg["content"]]})
+            elif msg["role"] == "assistant":
+                chat_history.append({"role": "model", "parts": [msg["content"]]})
+
+        # Start chat with history
+        chat = model.start_chat(history=chat_history)
+
+        # Send message and get response
+        response = chat.send_message(
+            user_message,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.7,
+                max_output_tokens=500,
+            )
+        )
+
+        assistant_response = response.text
 
         # Add assistant response to history
         add_to_history(patient_id, "assistant", assistant_response)
@@ -138,7 +145,7 @@ def generate_response(patient_id: str, user_message: str) -> str:
         return assistant_response
 
     except Exception as e:
-        logger.error(f"Error generating response with Grok API: {e}")
+        logger.error(f"Error generating response with Gemini API: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to generate response: {str(e)}"
@@ -232,8 +239,8 @@ async def delete_history(patient_id: str):
 
 @router.post("/voice")
 async def voice_chat(
-    patient_id: str,
-    audio: UploadFile = File(...)
+    audio: UploadFile = File(...),
+    patient_id: str = Form("default_patient")
 ):
     """
     Handle voice input - transcribe audio, get AI response, return text + audio

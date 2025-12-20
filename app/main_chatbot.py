@@ -1,10 +1,11 @@
 """
-Simple FastAPI app for chatbot only (no face recognition)
-Use this to test the chatbot without needing face recognition dependencies
+CogniAnchor Complete API
+Integrated backend with chatbot, face recognition, reminders, and user management
 """
 
 import logging
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -16,29 +17,57 @@ logger = logging.getLogger("CogniAnchorAPI")
 
 # --- FastAPI Application ---
 app = FastAPI(
-    title="Cogni Anchor Chatbot API",
-    description="Backend API for cognitive health companion app - Chatbot only"
+    title="CogniAnchor Complete API",
+    description="Backend API for cognitive health companion app - Full features",
+    version="2.0.0"
 )
 
-# Import and include chatbot router
+# Add CORS middleware for Flutter app
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins (adjust for production)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Import and include all routers
 from app.chatbot import router as chatbot_router
+from app.routes.reminders import router as reminders_router
+from app.routes.users_pairs import router as users_pairs_router
+from app.routes.face_recognition import router as face_router
+
 app.include_router(chatbot_router)
+app.include_router(reminders_router)
+app.include_router(users_pairs_router)
+app.include_router(face_router)
 
 @app.on_event("startup")
 def startup_event():
-    logger.info("Chatbot API startup complete!")
+    logger.info("CogniAnchor Complete API startup complete!")
     logger.info("API documentation available at: http://localhost:8000/docs")
+    logger.info("Features: Chatbot, Face Recognition, Reminders, User Management")
 
 @app.get("/")
 def read_root():
     return {
-        "message": "Cogni Anchor Chatbot API",
+        "message": "CogniAnchor Complete API",
+        "version": "2.0.0",
         "status": "running",
+        "features": [
+            "AI Chatbot (Gemini)",
+            "Face Recognition (DeepFace)",
+            "Reminder Management",
+            "User & Pair Management",
+            "Voice Chat (STT/TTS)"
+        ],
         "endpoints": {
             "docs": "/docs",
-            "chat": "/api/v1/chat/message",
-            "history": "/api/v1/chat/history/{patient_id}",
-            "health": "/api/v1/chat/health"
+            "chat": "/api/v1/chat/*",
+            "reminders": "/api/v1/reminders/*",
+            "users": "/api/v1/users/*",
+            "pairs": "/api/v1/pairs/*",
+            "face": "/api/v1/face/*"
         }
     }
 

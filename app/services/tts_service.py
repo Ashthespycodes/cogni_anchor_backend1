@@ -70,6 +70,39 @@ class TTSService:
             logger.error(f"Error speaking text: {e}")
             return False
 
+    def generate_audio_file_offline(
+        self,
+        text: str,
+        output_path: str = "output.mp3"
+    ) -> Optional[str]:
+        """
+        Generate audio file from text using offline TTS (pyttsx3)
+
+        Args:
+            text: Text to convert to speech
+            output_path: Path to save audio file
+
+        Returns:
+            Path to generated audio file or None if error
+        """
+        if not self.engine:
+            logger.error("pyttsx3 engine not initialized")
+            return None
+
+        try:
+            logger.info(f"Generating offline audio file for: {text[:50]}...")
+
+            # Save to file using pyttsx3
+            self.engine.save_to_file(text, output_path)
+            self.engine.runAndWait()
+
+            logger.info(f"Offline audio file generated: {output_path}")
+            return output_path
+
+        except Exception as e:
+            logger.error(f"Error generating offline audio file: {e}")
+            return None
+
     def generate_audio_file(
         self,
         text: str,
@@ -156,15 +189,29 @@ def generate_speech_file(
     voice: str = "alloy"
 ) -> Optional[str]:
     """
-    Quick helper to generate speech file using online TTS
+    Quick helper to generate speech file
+    Automatically uses offline TTS if OpenAI API key not available
 
     Args:
         text: Text to convert
         output_path: Output file path
-        voice: Voice to use
+        voice: Voice to use (only for online mode)
 
     Returns:
         Path to generated file or None
     """
-    online_tts = TTSService(use_online=True)
-    return online_tts.generate_audio_file(text, output_path, voice)
+    # Check if OpenAI API key is available
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+    if OPENAI_API_KEY:
+        # Try online TTS
+        online_tts = TTSService(use_online=True)
+        return online_tts.generate_audio_file(text, output_path, voice)
+    else:
+        # Use offline TTS
+        logger.info("Using offline TTS for audio file generation")
+        offline_tts = TTSService(use_online=False)
+        # Change extension to .wav for offline TTS (pyttsx3 works better with wav)
+        if output_path.endswith('.mp3'):
+            output_path = output_path.replace('.mp3', '.wav')
+        return offline_tts.generate_audio_file_offline(text, output_path)
