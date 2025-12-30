@@ -1,0 +1,9 @@
+fastapi[all]
+uvicorn
+# AI/Chatbot
+openai # For Grok API and Whisper STT/TTS
+python-dotenv # For environment variables
+# Voice Services
+pyttsx3 # Offline text-to-speech
+sounddevice # Audio recording
+scipy # Audio file handling
